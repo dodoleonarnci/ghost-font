@@ -1,0 +1,405 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{microtype}
+
+\geometry{margin=2.5cm}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+}
+
+\newtheorem{definition}{Definition}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+\title{\textbf{Ghost Font: A Formal Specification of\\
+Motion-Encoded Anti-AI Typography}}
+\author{
+  \textit{Formalized from the work of Eric Lu / Mixfont (2026)}\\[0.4em]
+  \small Research analysis and mathematical specification
+}
+\date{July 2026}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+%──────────────────────────────────────────────────────────────────────────────
+
+Ghost Font, released by Eric Lu and the Mixfont team in July 2026, is a
+motion-based visual encoding system that embeds a short text message into a
+video clip in a form immediately legible to human observers but opaque to
+current AI multimodal systems.  Unlike traditional steganographic schemes
+that hide information in the spatial or spectral domain of a single frame,
+Ghost Font encodes information in the \emph{temporal domain}—specifically in
+the relative motion direction of two overlapping dot populations.  This
+document provides a formal mathematical specification of that encoding
+algorithm.
+
+\subsection{Motivation and Context}
+
+Contemporary large language models with vision capabilities process video by
+decomposing it into a sequence of individual frames and applying image-based
+analysis to each frame independently.  They do not, in general, perform
+native temporal integration of motion across frames.  The human visual
+system, by contrast, possesses dedicated neural machinery (the dorsal
+``where/how'' stream, area MT/V5) for detecting and integrating motion across
+time.  Ghost Font exploits this architectural asymmetry: the letter signal
+exists only in the \emph{inter-frame motion differential}, which humans
+perceive instantly but which current AI frame-by-frame pipelines cannot
+recover without explicit motion-compensation preprocessing.
+
+A secondary layer—a \emph{decoy message}—is superimposed as a faint static
+pattern.  When an AI system averages frames or scans for spatial patterns, it
+surfaces this decoy rather than the true message, acting as a honeypot.
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{Notation and Primitives}
+%──────────────────────────────────────────────────────────────────────────────
+
+\begin{definition}[Canvas]
+A \emph{canvas} $\mathcal{C} = (W, H)$ is a discrete integer grid of pixels
+with width $W \in \mathbb{Z}^+$ and height $H \in \mathbb{Z}^+$.  A pixel is
+addressed by $(x, y)$ with $x \in [0, W)$, $y \in [0, H)$, all integers.
+\end{definition}
+
+\begin{definition}[Frame]
+A \emph{frame} at time step $t$ is a function
+$F_t : \mathcal{C} \to \{0, 1\}$, where $0$ denotes a background (light)
+pixel and $1$ denotes a foreground (dark) dot.
+\end{definition}
+
+\begin{definition}[Dot Population]
+A \emph{dot population} $\mathcal{P}$ is a finite multiset of particles.
+Each particle $p_i$ carries an initial position
+$(x_i^{(0)}, y_i^{(0)}) \in \mathcal{C}$ drawn uniformly at random, and
+belongs to exactly one of two classes: \emph{signal} or \emph{background}.
+\end{definition}
+
+\begin{definition}[Letter Mask]
+The \emph{letter mask} $\mathcal{M} : \mathcal{C} \to \{0, 1\}$ is a binary
+function derived by rasterizing the message glyphs onto the canvas at a
+chosen font face and size.  $\mathcal{M}(x, y) = 1$ iff pixel $(x, y)$ falls
+within a glyph region.
+\end{definition}
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{The Ghost Font Encoding Algorithm}
+%──────────────────────────────────────────────────────────────────────────────
+
+The algorithm proceeds in four stages: (1)~canvas and mask initialization,
+(2)~dual-population dot seeding, (3)~frame generation via opposing motion,
+and (4)~decoy superimposition.
+
+\subsection{Stage 1: Canvas and Mask Initialization}
+
+Given a message string $s$, rasterize each glyph onto the canvas using a
+chosen typeface, producing the letter mask $\mathcal{M}$.  Glyphs are
+typically laid out horizontally centred on the canvas.
+
+\subsection{Stage 2: Dual-Population Dot Seeding}
+
+Let $\rho \in (0, 1)$ be the target dot density.  Seed two disjoint
+populations uniformly at random:
+\begin{align}
+  \mathcal{P}_{\mathrm{sig}} &= \bigl\{ p_i :
+    (x_i^{(0)}, y_i^{(0)}) \sim \mathrm{Uniform}(\mathcal{C}),\;
+    \mathcal{M}(x_i^{(0)}, y_i^{(0)}) = 1 \bigr\}, \\
+  \mathcal{P}_{\mathrm{bg}}  &= \bigl\{ p_j :
+    (x_j^{(0)}, y_j^{(0)}) \sim \mathrm{Uniform}(\mathcal{C}),\;
+    \mathcal{M}(x_j^{(0)}, y_j^{(0)}) = 0 \bigr\},
+\end{align}
+with $|\mathcal{P}_{\mathrm{sig}}| + |\mathcal{P}_{\mathrm{bg}}|
+\approx \rho \cdot W \cdot H$.
+
+\begin{remark}
+The mask determines \emph{class membership}, not ongoing spatial
+confinement.  At time $t > 0$, particles move freely across the entire
+canvas; a signal particle originally inside a glyph region may later be
+anywhere.
+\end{remark}
+
+\subsection{Stage 3: Frame Generation via Opposing Motion}
+
+The encoding mechanism assigns opposite vertical velocity vectors to the
+two populations.
+
+\begin{definition}[Signal and Background Velocities]
+Let $v \in \mathbb{R}^+$ be the nominal scroll speed in pixels per second,
+$\Delta t = 1/f_r$ the inter-frame interval for frame rate $f_r$, and
+$(w_x, w_y) \in \mathbb{R}^2_{\geq 0}$ optional wobble amplitudes with
+angular frequencies $(\omega_x, \omega_y)$.  Then
+\begin{align}
+  \mathbf{v}_{\mathrm{sig}}(n) &=
+    \bigl(w_x \sin(\omega_x n\,\Delta t),\;
+           -v + w_y \cos(\omega_y n\,\Delta t)\bigr)
+    \quad (\text{upward}), \\
+  \mathbf{v}_{\mathrm{bg}} &= (0,\; +v)
+    \quad (\text{downward, constant}).
+\end{align}
+(Upward is the $-y$ direction in standard image coordinates.)
+\end{definition}
+
+The position of signal particle $p_i$ at integer frame index $n$ is
+\begin{equation}
+  \begin{pmatrix} x_i(n) \\ y_i(n) \end{pmatrix}
+  =
+  \begin{pmatrix}
+    x_i^{(0)} + \displaystyle\sum_{k=0}^{n-1} w_x \sin(\omega_x k\,\Delta t) \\[6pt]
+    \Bigl(y_i^{(0)} - n\,v\,\Delta t
+          + \displaystyle\sum_{k=0}^{n-1} w_y \cos(\omega_y k\,\Delta t)\Bigr)
+    \bmod H
+  \end{pmatrix},
+\end{equation}
+with vertical wrap-around modulo $H$ to maintain uniform coverage.
+The background particle $p_j$ satisfies
+\begin{equation}
+  (x_j(n), y_j(n)) = (x_j^{(0)},\; (y_j^{(0)} + n\,v\,\Delta t) \bmod H).
+\end{equation}
+
+Each frame $F_n$ is rendered by placing a filled disk of radius $r$ at each
+particle position:
+\begin{equation}
+  F_n(x, y) = 1 \iff
+  \exists\, p_i \in \mathcal{P}_{\mathrm{sig}} \cup \mathcal{P}_{\mathrm{bg}}
+  \text{ s.t. }
+  \bigl\|(x, y) - (x_i(n), y_i(n))\bigr\|_2 \leq r.
+\end{equation}
+
+\subsection{Stage 4: Decoy Superimposition}
+
+Let $\mathcal{D} : \mathcal{C} \to \{0,1\}$ be the binary raster of a decoy
+string $d$ (e.g., \texttt{WRITTEN IN GHOST FONT}).  Each output frame is
+\begin{equation}
+  F_n^{\mathrm{out}}(x, y)
+  = \min\!\bigl(1,\; F_n(x, y) + \alpha_d\,\mathcal{D}(x, y)\bigr),
+\end{equation}
+where $\alpha_d \ll 1$ is the decoy opacity, chosen so that the decoy is
+invisible in any single frame but accumulates to visibility when frames are
+temporally averaged (see Section~\ref{sec:security}).
+
+\begin{algorithm}[H]
+\caption{Ghost Font Video Encoding}
+\begin{algorithmic}[1]
+\Require Message $s$, canvas $(W,H)$, speed $v$, frame rate $f_r$,
+  dot density $\rho$, wobble $(w_x,w_y,\omega_x,\omega_y)$,
+  total frames $N_f$, decoy string $d$, decoy opacity $\alpha_d$
+\Ensure Video $\mathbf{V} = \bigl[F_0^{\mathrm{out}},\ldots,F_{N_f-1}^{\mathrm{out}}\bigr]$
+\State $\mathcal{M} \leftarrow \textsc{RasterizeGlyphs}(s,\,W,\,H)$
+\State $\mathcal{D} \leftarrow \textsc{RasterizeGlyphs}(d,\,W,\,H)$
+\State $\mathcal{P}_{\mathrm{sig}},\,\mathcal{P}_{\mathrm{bg}} \leftarrow \textsc{SeedDots}(\mathcal{M},\,\rho,\,W,\,H)$
+\For{$n = 0$ \textbf{to} $N_f - 1$}
+  \State $F_n \leftarrow \mathbf{0}_{W \times H}$
+  \For{each $p_i \in \mathcal{P}_{\mathrm{sig}}$}
+    \State $(x,y) \leftarrow \textsc{AdvanceSig}(p_i,\,n,\,v,\,\Delta t,\,w_x,\,w_y,\,\omega_x,\,\omega_y,\,H)$
+    \State $\textsc{PlaceDot}(F_n,\,x,\,y,\,r)$
+  \EndFor
+  \For{each $p_j \in \mathcal{P}_{\mathrm{bg}}$}
+    \State $(x,y) \leftarrow \textsc{AdvanceBg}(p_j,\,n,\,v,\,\Delta t,\,H)$
+    \State $\textsc{PlaceDot}(F_n,\,x,\,y,\,r)$
+  \EndFor
+  \State $F_n^{\mathrm{out}} \leftarrow \min(1,\;F_n + \alpha_d\cdot\mathcal{D})$
+\EndFor
+\Return $\mathbf{V}$
+\end{algorithmic}
+\end{algorithm}
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{Perceptual Properties}
+%──────────────────────────────────────────────────────────────────────────────
+
+\subsection{Human Legibility via Kinetic Depth and Motion Segregation}
+
+Human motion perception (\emph{kinetic depth effect}, \emph{structure-from-motion})
+allows the visual system to segment two coherently moving dot fields even when
+they overlap and each individually appears random.  The signal region—dots
+scrolling upward—segregates from the background—dots scrolling downward—
+making letter shapes immediately apparent to a human viewer, typically within
+one second of video playback.
+
+\subsection{Single-Frame Uninformativeness}
+
+\begin{proposition}
+\label{prop:uninformative}
+For any single frame $F_n$ produced by Algorithm~1 (ignoring the
+$\alpha_d$ decoy term), the pixel distribution is i.i.d.\
+$\mathrm{Bernoulli}(\rho)$, independent of the letter mask $\mathcal{M}$.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+Each particle's initial position is drawn uniformly from $\mathcal{C}$.
+Advancing by a deterministic offset (modulo $H$) maps a uniform distribution
+to a uniform distribution.  The union rendering of two independent
+uniform-density Bernoulli processes at combined rate $\rho$ is again
+Bernoulli($\rho$) at each pixel, with no spatial structure that depends on
+which population placed the dot.
+\end{proof}
+
+Consequently, a screenshot (single frame) carries zero mutual information
+about the letter mask.
+
+\subsection{Message Recovery by Motion-Compensated Integration}
+\label{sec:recovery}
+
+Define the vertical shift operator $\mathcal{T}_{\delta y}[F]$ that
+translates frame $F$ upward by $\delta y$ pixels (with wrap-around).
+The signal population at frame $n$ is displaced by
+$\delta y_n = n\,v\,\Delta t$ (ignoring wobble) relative to frame $0$.
+Applying the inverse shift before summation yields
+\begin{equation}
+  I_{\mathrm{sig}}(x, y)
+  = \frac{1}{N_f} \sum_{n=0}^{N_f-1}
+      \mathcal{T}_{n\,v\,\Delta t}\!\bigl[F_n\bigr](x, y).
+\end{equation}
+In this shifted coordinate, signal dots accumulate coherently while
+background dots are smeared uniformly across all $y$-positions.  The
+result is a high-contrast image of the letter mask $\mathcal{M}$, with
+signal-to-noise ratio growing as $\mathcal{O}(\sqrt{N_f})$.
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{Security Analysis}
+\label{sec:security}
+%──────────────────────────────────────────────────────────────────────────────
+
+\subsection{Layer 1 — Single-Frame Opacity}
+
+By Proposition~\ref{prop:uninformative}, no information about $s$ is
+recoverable from any individual frame.  Image-based AI analysis (screenshot,
+single-frame OCR) yields null information about the true message.
+
+\subsection{Layer 2 — Temporal Averaging and the Decoy Honeypot}
+
+Na\"{\i}ve temporal averaging without motion compensation gives
+\begin{equation}
+  \bar{F}(x,y)
+  = \frac{1}{N_f}\sum_{n=0}^{N_f-1} F_n^{\mathrm{out}}(x,y)
+  \approx \rho \cdot \mathbf{1} + \alpha_d\,\mathcal{D}(x,y).
+\end{equation}
+The moving populations average out to uniform density $\rho$; the only
+spatially structured component that survives is the \emph{static} decoy
+$\alpha_d\,\mathcal{D}$.  An AI applying frame averaging therefore recovers
+$d$, not $s$—the honeypot property.  The model reports this finding with
+high confidence, further masking the existence of the true message.
+
+\subsection{Layer 3 — Motion-Compensation Break}
+
+A determined adversary with local code execution can defeat both layers:
+\begin{enumerate}[label=\arabic*.]
+  \item Estimate the scroll velocity $v$ via optical flow (e.g.,
+    Farneb\"{a}ck or Lucas--Kanade).
+  \item Apply the motion-compensated integrator of
+    Section~\ref{sec:recovery} to reconstruct $\mathcal{M}$.
+  \item Run OCR on the reconstructed image.
+\end{enumerate}
+This constitutes a complete break.  The \texttt{ghost-font-breaker} tool
+(42-evey, GitHub, 2026) demonstrates deterministic message recovery on all
+publicly available Ghost Font clips with recovered velocity
+$v = 4.012\,\mathrm{px/frame}$, wobble amplitudes
+$w_x = 72\,\mathrm{px}$, $w_y = 48\,\mathrm{px}$.
+
+\subsection{Resistance Summary}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{p{4.5cm}p{4cm}cc}
+\toprule
+\textbf{Adversary capability} & \textbf{Method} &
+  \textbf{Decoy?} & \textbf{True msg?} \\
+\midrule
+Screenshot / single frame    & Direct OCR           & No  & No  \\
+Frame averaging              & Na\"{\i}ve avg.      & Yes & No  \\
+Online multimodal model      & Frame-by-frame       & Yes & No  \\
+Local code execution         & Motion-compensated avg. & Yes & Yes \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{Parameter Reference}
+%──────────────────────────────────────────────────────────────────────────────
+
+\begin{table}[h!]
+\centering
+\caption{Ghost Font algorithm parameters (observed / recovered values)}
+\label{tab:params}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{llll}
+\toprule
+\textbf{Parameter} & \textbf{Symbol} & \textbf{Observed value} & \textbf{Notes} \\
+\midrule
+Scroll speed           & $v$                          & 120\,px/s (4.012\,px/frame) & at $\approx$30\,fps \\
+Signal direction       & $\mathbf{v}_{\mathrm{sig}}$  & upward ($-y$)               & \\
+Background direction   & $\mathbf{v}_{\mathrm{bg}}$   & downward ($+y$)             & \\
+Wobble amplitude $x$   & $w_x$                        & 72\,px                      & sinusoidal \\
+Wobble amplitude $y$   & $w_y$                        & 48\,px                      & cosinusoidal \\
+Dot density            & $\rho$                       & $\approx 0.3$--$0.5$        & \\
+Dot radius             & $r$                          & 2--3\,px                    & \\
+Decoy opacity          & $\alpha_d$                   & $\ll 1$                     & survives avg. \\
+Decoy string           & $d$                          & \texttt{WRITTEN IN GHOST FONT} & hardcoded \\
+Max message length     & $|s|$                        & 36 characters               & prototype \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{Limitations and Future Directions}
+%──────────────────────────────────────────────────────────────────────────────
+
+\begin{enumerate}[label=\arabic*.]
+  \item \textbf{Human legibility cost.}  Ghost Font is harder for humans to
+    read than ordinary text.  The trade-off is inherent: motion encoding
+    requires a video medium and reduces reading speed compared to static
+    typography.
+
+  \item \textbf{Video-native AI models.}  The current resistance relies on AI
+    systems processing video as frame sequences.  Once video-native models
+    performing native temporal integration of motion become commonplace, the
+    core evasion mechanism will likely fail.
+
+  \item \textbf{No cryptographic security.}  Ghost Font provides obfuscation,
+    not cryptographic secrecy.  A motivated adversary with code execution can
+    fully recover the message.  True secrecy requires a shared key; a
+    companion design document proposes key-encrypted extensions.
+
+  \item \textbf{Character limit.}  The current prototype supports short
+    messages ($\leq 36$ characters).  Longer messages reduce per-letter
+    motion contrast and degrade human legibility.
+
+  \item \textbf{CAPTCHA potential.}  Motion-based encoding is a promising
+    direction for next-generation CAPTCHAs, exploiting the human advantage in
+    biological motion perception where static-image CAPTCHAs have been largely
+    defeated by current vision models.
+\end{enumerate}
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+%──────────────────────────────────────────────────────────────────────────────
+
+Ghost Font formalizes as a \emph{dual-population, opposing-direction random
+dot kinematogram} in which the letter mask $\mathcal{M}$ partitions dots into
+a signal population (scrolling up at velocity $v$) and a background population
+(scrolling down at $v$).  Single frames are statistically uniform
+(Proposition~\ref{prop:uninformative}); the letter mask is recoverable only
+by motion-compensated temporal integration (Section~\ref{sec:recovery}).  A
+static decoy layer provides a honeypot for frame-averaging adversaries.  The
+system is provably opaque to single-frame analysis, practically opaque to
+current online multimodal AI, and fully defeatable by local code-execution via
+optical flow and motion-compensated integration—a known limitation that
+motivates the key-encrypted extensions described in the companion design
+document.
+
+\end{document}
