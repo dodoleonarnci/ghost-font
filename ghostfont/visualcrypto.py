@@ -163,6 +163,37 @@ def recover_message(
     return s1_hat, reveal
 
 
+def keyed_view(
+    frames: np.ndarray, cfg: GhostFontConfig, key: bytes, enc_share2: bytes
+) -> np.ndarray:
+    """Client-side keyed playback that restores reading-by-eye.
+
+    The distributed video's motion encodes share-1 (noise). Since
+    ``M = share1 XOR share2`` and a block's motion direction *is* its share-1
+    bit, flipping the motion of exactly the blocks where ``share2 == 1`` turns
+    the video's motion-defined form into the message itself:
+
+        motion(block) = d(share1)            -> after flipping share2==1 blocks
+                      = d(share1 XOR share2)  = d(M)
+
+    Flipping a block's vertical motion is just playing that block's frames in
+    reverse. This needs only the key (share-2) -- not share-1 -- and is a pure
+    recombination of the received frames (no re-encoding). The returned clip is
+    an ordinary Ghost Font video of the message: a keyed human simply *watches*
+    it and reads the moving letters, exactly as in the original Ghost Font.
+    Without the key the flip pattern is unknown, so the raw video stays noise.
+    """
+    share2 = unpack_share(crypto.decrypt(key, enc_share2))
+    H, W = cfg.canvas.height, cfg.canvas.width
+    flip = upsample(share2.astype(bool), cfg.vc.block_px, H, W)
+    N = len(frames)
+    out = np.empty_like(frames)
+    for n in range(N):
+        # share2==1 blocks: reverse time (flips motion up<->down); else keep.
+        out[n] = np.where(flip, frames[N - 1 - n], frames[n])
+    return out
+
+
 def upscale_display(coarse: np.ndarray, H: int, W: int, smooth: float = 0.0) -> np.ndarray:
     """Nearest-neighbour upscale a coarse binary image to (H,W) float for display."""
     img = cv2.resize(coarse.astype(np.float32), (W, H), interpolation=cv2.INTER_NEAREST)

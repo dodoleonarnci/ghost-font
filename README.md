@@ -47,6 +47,8 @@ Run `python compare.py` for **Approach 3** and the side-by-side:
 | `vc.mp4` · `vc.gif` | The visual-crypto (Approach 3) animation — its motion carries share-1. |
 | `vc_keyimage.png` | The static key image (share-2) — pure noise on its own. |
 | `vc_keyimage.enc` | `AES-256-GCM(share-2)` under `K`, distributed out-of-band. |
+| `vc_keyed_view.mp4` · `.gif` | **Keyed playback**: the key-reconstructed clip a human *watches and reads* by eye (see fix below). |
+| `vc_human_readability.png` | Motion-perception maps: raw video (noise) vs keyed playback ("GHOST"). |
 | `compare_1plus4_vs_3.png` | **1+4 vs Approach 3** side-by-side: single frame, keyless break, keyed recovery, and a property table. |
 
 ## How the original works
@@ -141,6 +143,33 @@ recovers only share-1 — pure noise, zero bits about the message (verified: the
 recovered share correlates ≈0 with the message). No amount of computation on the
 video alone helps. Security reduces entirely to AES on the key image.
 
+### Restoring reading-by-eye (keyed playback)
+
+Plain Approach 3 loses Ghost Font's whole point: the message is in the *motion*
+(share-1), so a human watching sees only noise — even *with* the key there's
+nothing to read by eye, because a static key image cannot be optically overlaid
+onto motion. (And it can't be: a single reused static key XOR-ed into every
+frame cancels across frames — `A_n XOR A_m = G_n XOR G_m` — leaking the motion.
+So the key must combine with the video in the *motion* domain, which needs a
+computational step.)
+
+The fix is `visualcrypto.keyed_view`. In the distributed video a block scrolls
+up iff its share-1 bit is 1, and `M = share1 XOR share2`, so **flipping the
+motion of exactly the blocks where `share2 == 1`** makes the motion-defined form
+equal to the message:
+
+```
+motion(block) = d(share1)  ── flip share2==1 blocks ──▶  d(share1 XOR share2) = d(M)
+```
+
+Flipping a block's vertical motion is just **playing that block's frames in
+reverse** — a pure recombination of the received frames that needs only the key
+(share-2), not share-1. The result is an ordinary Ghost Font clip of the
+message: a keyed viewer *watches it and reads the moving letters by eye*, exactly
+like the original. Without the key the flip pattern is unknown and the raw video
+stays noise. Verified: raw-video motion correlates ≈0 with the message, while the
+keyed playback's motion matches it ~99% (`vc_human_readability.png`).
+
 ## Approach 1+4 vs Approach 3
 
 `compare_1plus4_vs_3.png` puts them head to head under the same message and key:
@@ -149,7 +178,7 @@ video alone helps. Security reduces entirely to AES on the key image.
 |---|---|---|
 | security | computational (HMAC-PRF + AES-256) | **information-theoretic** (XOR share) + AES-256 on the key image |
 | self-contained | **yes** — key table hidden in the video (stego) | no — needs a separate static key image |
-| human needs key | **no** — motion segregation reads it directly | yes — overlay the key image (transparency / client-side) |
+| human needs key | **no** — motion segregation reads it directly | yes — but keyed playback flips share-2 blocks, then read by eye |
 | if motion is broken perfectly | partial leak — the scrambled letter is still visible | **zero leak** — provably independent of the message |
 | complexity | medium | high |
 
